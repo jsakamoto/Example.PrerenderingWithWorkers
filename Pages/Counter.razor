@@ -9,15 +9,41 @@
 
 <button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
 
-@inject WebWorkerService WorkerService
+@*
+    Don't inject the WebWorkerService directly.
+    Instead, inject the IServiceProvider and get the WebWorkerService from it when needed.
+    Otherwise, injecting the WebWorkerService at startup will cause a crash of pre-rendering,
+    because the WebWorkerService can only be used in a web browser process.
+    (Please remember that the pre-rendering process runs inside a build process.)
+*@
+@inject IServiceProvider Services
 @code {
     private int currentCount = 0;
 
+    private WebWorkerService? webWorkerService;
+
+    // The timing of OnAfterRender ensures that the application is running in a web browser,
+    // so the WebWorkerService can be obtained safely.
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            webWorkerService = Services.GetService<WebWorkerService>();
+        }
+    }
+
+    // You don't have to care whether this method runs inside a pre-rendering process.
+    // This method absolutely will be invoked on a web browser,
+    // because this method is a click event handler of a button element, 
+    // and a click action never occurs while pre-rendering!
     private async void IncrementCount()
     {
         //currentCount++;
 
-        using var webWorker = await WorkerService.GetWebWorker();
+        if (webWorkerService == null) throw new Exception("Web Worker Service is null.");
+        using var webWorker = await webWorkerService.GetWebWorker();
+        if (webWorker == null) throw new Exception("Web Worker is null.");
+
         var myWorker = webWorker.GetService<IMyWorker>();
         var result = await myWorker.Add(currentCount, 1);
     }
